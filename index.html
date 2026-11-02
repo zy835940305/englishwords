@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0b1020">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="天津单词">
+<meta name="description" content="天津初中英语单词 · 离线学习 PWA">
+<title>天津初中英语单词</title>
+<link rel="manifest" href="./site.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icon.svg">
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span class="brand-title">天津初中英语单词</span>
+    </div>
+    <div class="brand-sub" id="topSub">今日学习</div>
+  </header>
+
+  <main class="main" id="main">
+    <!-- 今日 -->
+    <section class="view" id="view-today" data-view="today">
+      <div class="progress-head">
+        <div class="progress-text"><span id="todayCounter">0 / 0</span><span class="muted" id="todayDone">已学 0</span></div>
+        <div class="bar"><div class="bar-fill" id="todayBar" style="width:0%"></div></div>
+      </div>
+      <div class="switches">
+        <button class="switch" id="toggleCn" type="button">遮住中文</button>
+        <button class="switch" id="toggleDetail" type="button">展开详解</button>
+      </div>
+      <div id="todayCardHost"></div>
+      <div class="card-actions">
+        <button class="btn btn-ghost" id="todayPrev" type="button">上一个</button>
+        <button class="btn btn-primary" id="todayMark" type="button">标记已学</button>
+        <button class="btn btn-ghost" id="todayNext" type="button">下一个</button>
+      </div>
+    </section>
+
+    <!-- 复习 -->
+    <section class="view" id="view-review" data-view="review">
+      <div id="reviewHost"></div>
+    </section>
+
+    <!-- 词库 -->
+    <section class="view" id="view-library" data-view="library">
+      <div class="search-wrap">
+        <input class="search" id="searchInput" type="search" inputmode="search"
+               placeholder="搜索单词或中文释义…" autocomplete="off" autocorrect="off" autocapitalize="off">
+        <button class="search-clear" id="searchClear" type="button" hidden>清除</button>
+      </div>
+      <div class="lib-meta muted" id="libMeta"></div>
+      <div id="libraryHost"></div>
+    </section>
+
+    <!-- 我的 -->
+    <section class="view" id="view-me" data-view="me">
+      <div id="meHost"></div>
+    </section>
+  </main>
+
+  <nav class="tabbar" id="tabbar">
+    <button class="tab is-active" data-tab="today" type="button"><span class="tab-ico">◎</span><span class="tab-label">今日</span></button>
+    <button class="tab" data-tab="review" type="button"><span class="tab-ico">✎</span><span class="tab-label">复习</span></button>
+    <button class="tab" data-tab="library" type="button"><span class="tab-ico">☰</span><span class="tab-label">词库</span></button>
+    <button class="tab" data-tab="me" type="button"><span class="tab-ico">◈</span><span class="tab-label">我的</span></button>
+  </nav>
+</div>
+
+<div class="sheet" id="wordSheet" hidden>
+  <div class="sheet-backdrop" data-close="1"></div>
+  <div class="sheet-panel" role="dialog" aria-modal="true">
+    <button class="sheet-close" id="sheetClose" type="button" aria-label="关闭">✕</button>
+    <div id="sheetHost"></div>
+  </div>
+</div>
+
+<script src="./words.js"></script>
+<script src="./logic.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

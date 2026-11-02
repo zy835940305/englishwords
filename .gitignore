@@ -1,0 +1,6 @@
+# 词表的其他格式，不上站
+words.csv
+words.json
+
+# 发布压缩包
+*.zip
