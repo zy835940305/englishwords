@@ -305,6 +305,67 @@ body::after {
 
 .ver-line { text-align: center; font-size: 12px; margin-top: 16px; line-height: 1.7; }
 
+/* ---------- 发音按钮 ---------- */
+.speak {
+  margin-left: 10px; vertical-align: middle;
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--glass-strong); color: var(--c2);
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: transform 0.15s ease, background 0.2s ease, color 0.2s ease;
+}
+.speak:active { transform: scale(0.92); background: var(--grad); color: #fff; border-color: transparent; }
+.speak svg { display: block; }
+
+/* ---------- 错词本 ---------- */
+.wrow .rw-del {
+  flex: none; align-self: center; margin-left: 6px;
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1px solid var(--line); background: transparent; color: var(--muted);
+  font-size: 12px; line-height: 1; cursor: pointer;
+}
+.wrow .rw-del:active { color: #fff; background: rgba(251, 113, 133, 0.28); border-color: rgba(251, 113, 133, 0.5); }
+
+/* ---------- 学习统计 ---------- */
+.streak-line { display: flex; align-items: baseline; gap: 8px; }
+.streak-num {
+  font-size: 30px; font-weight: 800; line-height: 1.1;
+  background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.spark { display: flex; gap: 6px; }
+.spark-col { flex: 1; min-width: 0; }
+.spark-track { height: 78px; display: flex; align-items: flex-end; }
+.spark-bar { width: 100%; border-radius: 6px 6px 0 0; background: var(--grad); min-height: 3px;
+  transition: height 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+.spark-bar.is-zero { background: rgba(255, 255, 255, 0.10); }
+.spark-lab { text-align: center; font-size: 10.5px; color: var(--muted); margin-top: 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- 复习日历 ---------- */
+.cal-wrap { max-width: 380px; margin: 0 auto; }
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin: 2px 0 12px; }
+.cal-title { font-size: 15px; font-weight: 700; }
+.cal-nav { display: flex; gap: 8px; }
+.cal-nav button {
+  width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--line);
+  background: var(--glass); color: var(--ink-soft); cursor: pointer; font-size: 14px; line-height: 1;
+}
+.cal-nav button:active { transform: scale(0.94); }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.cal-wd { text-align: center; font-size: 11px; color: var(--muted); padding-bottom: 4px; }
+.cal-cell {
+  height: 38px; border-radius: 10px; border: 1px solid transparent;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12.5px; color: var(--ink-soft); background: rgba(255, 255, 255, 0.035);
+}
+.cal-cell.is-empty { background: transparent; }
+.cal-cell.is-on { background: linear-gradient(120deg, rgba(109, 92, 255, 0.38), rgba(34, 211, 238, 0.30));
+  color: #fff; font-weight: 700; border-color: var(--line); }
+.cal-cell.is-today { border-color: var(--c2); box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.22); }
+.cal-cell.is-future { opacity: 0.35; }
+
+/* ---------- 导出 / 导入 ---------- */
+.io-row { display: flex; gap: 10px; }
+
 @media (min-width: 700px) {
   .w-word { font-size: 34px; }
   .app { max-width: 760px; margin: 0 auto; }

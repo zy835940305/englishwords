@@ -6,13 +6,14 @@
   'use strict';
 
   var WORDS = (typeof window !== 'undefined' && window.WORDS) || [];
-  var APP_VERSION = '1.0.0';
+  var APP_VERSION = '1.1.0';
   var DAILY_COUNT = 25;
   var K = {
     learned: 'tjw_learned',
     wrong: 'tjw_wrong',
     settings: 'tjw_settings',
-    today: 'tjw_today'
+    today: 'tjw_today',
+    stats: 'tjw_stats'
   };
 
   /* ---------------- 存储 ---------------- */
@@ -34,6 +35,31 @@
   if (typeof settings.hideCn !== 'boolean') settings.hideCn = false;
   if (typeof settings.expandDetail !== 'boolean') settings.expandDetail = false;
 
+  // 每日学习记录：{ 'YYYY-MM-DD': { learned: [id...], right: n, total: n } }
+  var stats = readJSON(K.stats, {});
+  if (!stats || typeof stats !== 'object' || Array.isArray(stats)) stats = {};
+
+  function saveStats() { writeJSON(K.stats, stats); }
+  function statOf(key) {
+    var s = stats[key];
+    if (!s || typeof s !== 'object' || Array.isArray(s)) { s = { learned: [], right: 0, total: 0 }; stats[key] = s; }
+    if (!Array.isArray(s.learned)) s.learned = [];
+    if (typeof s.right !== 'number') s.right = 0;
+    if (typeof s.total !== 'number') s.total = 0;
+    return s;
+  }
+  function isActiveDay(key) {
+    var s = stats[key];
+    return !!(s && (((s.learned || []).length) || s.total));
+  }
+  function streakDays() {
+    var n = 0;
+    var d = new Date();
+    if (!isActiveDay(fmtDate(d))) d.setDate(d.getDate() - 1); // 今天还没活动，从昨天起算
+    while (isActiveDay(fmtDate(d))) { n++; d.setDate(d.getDate() - 1); }
+    return n;
+  }
+
   function learnedSet() { var s = {}; learned.forEach(function (id) { s[id] = 1; }); return s; }
   function isLearned(id) { return learned.indexOf(id) >= 0; }
   function saveLearned() { writeJSON(K.learned, learned); }
@@ -46,14 +72,14 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
-  function todayStr() {
-    var d = new Date();
+  function fmtDate(d) {
     var m = String(d.getMonth() + 1);
     var day = String(d.getDate());
     if (m.length < 2) m = '0' + m;
     if (day.length < 2) day = '0' + day;
     return d.getFullYear() + '-' + m + '-' + day;
   }
+  function todayStr() { return fmtDate(new Date()); }
   var byId = {};
   WORDS.forEach(function (w) { byId[w.id] = w; });
 
@@ -68,6 +94,32 @@
     toastEl.classList.add('is-on');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { toastEl.classList.remove('is-on'); }, 1600);
+  }
+
+  /* ---------------- 发音（零依赖，走系统语音合成） ---------------- */
+  var SPEAK_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
+    '<path d="M4 9h3.2L12 5.2v13.6L7.2 15H4z" fill="currentColor"/>' +
+    '<path d="M15.5 8.6a4.2 4.2 0 0 1 0 6.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' +
+    '</svg>';
+
+  function speak(text) {
+    var t = String(text == null ? '' : text).trim();
+    if (!t) return;
+    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance !== 'function') {
+      toast('当前环境不支持朗读');
+      return;
+    }
+    try {
+      window.speechSynthesis.cancel();
+      var u = new window.SpeechSynthesisUtterance(t);
+      u.lang = 'en-US';
+      u.rate = 0.9;
+      window.speechSynthesis.speak(u);
+    } catch (e) { toast('朗读失败'); }
+  }
+
+  function speakBtn(word) {
+    return '<button class="speak" data-speak="' + esc(word) + '" type="button" aria-label="朗读 ' + esc(word) + '">' + SPEAK_SVG + '</button>';
   }
 
   /* ---------------- 今日队列 ---------------- */
@@ -169,7 +221,7 @@
     var open = (opts.forceOpen !== undefined) ? opts.forceOpen : settings.expandDetail;
     return '<article class="wcard glass" data-card="' + esc(e.id) + '">' +
       '<div class="wcard-head"><div>' +
-        '<div class="w-word">' + esc(e.word) + '</div>' +
+        '<div class="w-word">' + esc(e.word) + speakBtn(e.word) + '</div>' +
         '<div class="w-phon">' + esc(e.phonetic) + '</div>' +
         '<span class="w-pos">' + esc(e.posText) + '</span>' +
       '</div><div class="w-ltr">' + esc(e.letter || '') + '</div></div>' +
@@ -195,6 +247,11 @@
         btn.textContent = willOpen ? '收起详解' : '展开详解';
       });
     }
+    var sp = root.querySelector('[data-speak]');
+    if (sp) sp.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      speak(sp.getAttribute('data-speak'));
+    });
   }
 
   /* ---------------- 今日视图 ---------------- */
@@ -248,8 +305,19 @@
     var w = currentWord();
     if (!w) return;
     var i = learned.indexOf(w.id);
-    if (i >= 0) { learned.splice(i, 1); toast('已取消标记'); }
-    else { learned.push(w.id); toast('已标记为已学 ✓'); }
+    var s = statOf(todayStr());
+    if (i >= 0) {
+      learned.splice(i, 1);
+      var si = s.learned.indexOf(w.id);
+      if (si >= 0) s.learned.splice(si, 1);
+      saveStats();
+      toast('已取消标记');
+    } else {
+      learned.push(w.id);
+      if (s.learned.indexOf(w.id) < 0) s.learned.push(w.id);
+      saveStats();
+      toast('已标记为已学 ✓');
+    }
     saveLearned();
     updateTodayProgress();
   }
@@ -257,10 +325,15 @@
   /* ---------------- 复习视图 ---------------- */
   var quiz = null;
 
-  function buildQuiz() {
-    var pool = learned.map(function (id) { return byId[id]; }).filter(Boolean);
-    if (pool.length < 10) pool = WORDS.slice(0);
-    var seed = Logic.hashSeed(todayStr() + '#quiz#' + pool.length);
+  function buildQuiz(idList) {
+    var pool;
+    if (idList && idList.length) {
+      pool = idList.map(function (id) { return byId[id]; }).filter(Boolean);
+    } else {
+      pool = learned.map(function (id) { return byId[id]; }).filter(Boolean);
+      if (pool.length < 10) pool = WORDS.slice(0);
+    }
+    var seed = Logic.hashSeed(todayStr() + '#quiz#' + (idList ? 'w' : 'n') + '#' + pool.length);
     var picked = Logic.seededShuffle(pool, seed).slice(0, Math.min(10, pool.length));
     var questions = picked.map(function (w) {
       var e = Logic.enhance(w, WORDS);
@@ -307,7 +380,7 @@
     var html = '<div class="score-line"><span>第 ' + (quiz.index + 1) + ' / ' + quiz.questions.length + ' 题</span>' +
       '<span>答对 ' + quiz.right + '</span></div>';
     html += '<div class="quiz-q glass"><div class="q-label">选择正确的中文释义</div>' +
-      '<div class="q-word">' + esc(e.word) + '</div>' +
+      '<div class="q-word">' + esc(e.word) + speakBtn(e.word) + '</div>' +
       '<div class="q-phon">' + esc(e.phonetic) + '</div></div>';
 
     html += q.options.map(function (op, i) {
@@ -343,6 +416,8 @@
     host.querySelectorAll('[data-opt]').forEach(function (b) {
       b.addEventListener('click', function () { answerQuiz(parseInt(b.getAttribute('data-opt'), 10)); });
     });
+    var sp = host.querySelector('[data-speak]');
+    if (sp) sp.addEventListener('click', function () { speak(sp.getAttribute('data-speak')); });
     var next = $('quizNext');
     if (next) next.addEventListener('click', function () { quiz.index++; renderReview(); });
   }
@@ -352,13 +427,17 @@
     if (q.chosen !== null) return;
     q.chosen = optId;
     var correctId = q.e.id;
+    var s = statOf(todayStr());
+    s.total++;
     if (optId === correctId) {
       quiz.right++;
+      s.right++;
       var wi = wrongBook.indexOf(correctId);
       if (wi >= 0) { wrongBook.splice(wi, 1); saveWrong(); }
     } else {
       if (wrongBook.indexOf(correctId) < 0) { wrongBook.push(correctId); saveWrong(); }
     }
+    saveStats();
     renderReview();
   }
 
@@ -429,6 +508,175 @@
     if (panel) panel.scrollTop = 0;
   }
 
+  /* ---------------- 错词本（独立页） ---------------- */
+  function renderWrong() {
+    var host = $('wrongHost');
+    var ids = wrongBook.filter(function (id) { return byId[id]; });
+    if (!ids.length) {
+      host.innerHTML = '<div class="glass panel" style="text-align:center;color:var(--muted)">错词本是空的。去「复习」做几道题吧。</div>';
+      return;
+    }
+    var n = Math.min(10, ids.length);
+    var html = '<div class="score-line"><span>共 ' + ids.length + ' 个错词</span><span>答对一次即自动移出</span></div>';
+    html += '<button class="btn btn-primary btn-wide" id="wrongRedo" type="button" style="margin-bottom:12px">重做错题（' + n + ' 题）</button>';
+    html += ids.map(function (id) {
+      var w = byId[id];
+      return '<div class="wrow" data-wid="' + esc(id) + '">' +
+        '<span class="rw-word">' + esc(w.word) + '</span>' +
+        '<span class="rw-phon">' + esc(w.phonetic) + '</span>' +
+        '<span class="rw-meaning">' + esc(Logic.splitMeanings(w.meaning)[0] || w.meaning) + '</span>' +
+        '<button class="rw-del" data-del="' + esc(id) + '" type="button" aria-label="移出错词本">✕</button>' +
+        '</div>';
+    }).join('');
+    host.innerHTML = html;
+
+    $('wrongRedo').addEventListener('click', function () {
+      quiz = buildQuiz(ids);
+      switchTab('review');
+    });
+    host.querySelectorAll('[data-wid]').forEach(function (row) {
+      row.addEventListener('click', function (ev) {
+        if (ev.target.closest('[data-del]')) return;
+        openSheet(parseInt(row.getAttribute('data-wid'), 10));
+      });
+    });
+    host.querySelectorAll('[data-del]').forEach(function (b) {
+      b.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var id = parseInt(b.getAttribute('data-del'), 10);
+        var i = wrongBook.indexOf(id);
+        if (i >= 0) { wrongBook.splice(i, 1); saveWrong(); }
+        toast('已移出错词本');
+        renderWrong();
+      });
+    });
+  }
+
+  /* ---------------- 学习统计 / 复习日历 ---------------- */
+  var calMonth = null;
+
+  function last7Days() {
+    var out = [];
+    for (var i = 6; i >= 0; i--) {
+      var d = new Date();
+      d.setDate(d.getDate() - i);
+      var s = stats[fmtDate(d)] || {};
+      out.push({
+        label: (d.getMonth() + 1) + '/' + d.getDate(),
+        count: (s.learned || []).length
+      });
+    }
+    return out;
+  }
+
+  function statsHTML() {
+    var days = last7Days();
+    var max = 1;
+    days.forEach(function (d) { if (d.count > max) max = d.count; });
+    var t = stats[todayStr()] || { right: 0, total: 0 };
+    var tTotal = t.total || 0;
+    var rate = tTotal ? Math.round((t.right || 0) / tTotal * 100) : 0;
+
+    var h = '<div class="panel glass">';
+    h += '<div class="streak-line"><span class="streak-num">' + streakDays() + '</span><span class="muted">天连续学习</span></div>';
+    h += '<div class="progress-text" style="margin-bottom:4px"><span style="font-size:14px">今日答题</span>' +
+      '<span class="muted">' + (tTotal ? ((t.right || 0) + ' / ' + tTotal + ' · 正确率 ' + rate + '%') : '还没做题') + '</span></div>';
+    h += '<div class="muted" style="margin:14px 0 8px">近 7 天学习量</div>';
+    h += '<div class="spark">' + days.map(function (d) {
+      var pct = d.count ? Math.max(Math.round(d.count / max * 100), 10) : 0;
+      return '<div class="spark-col">' +
+        '<div class="spark-track"><div class="spark-bar' + (d.count ? '' : ' is-zero') + '" style="height:' + (d.count ? pct : 3) + '%"></div></div>' +
+        '<div class="spark-lab">' + d.label + '</div></div>';
+    }).join('') + '</div>';
+    h += '</div>';
+    return h;
+  }
+
+  function calendarHTML() {
+    var now = new Date();
+    if (!calMonth) calMonth = { y: now.getFullYear(), m: now.getMonth() };
+    var y = calMonth.y, m = calMonth.m;
+    var startWd = new Date(y, m, 1).getDay();
+    var daysInMonth = new Date(y, m + 1, 0).getDate();
+    var todayKey = todayStr();
+
+    var h = '<div class="cal-wrap">';
+    h += '<div class="cal-head"><div class="cal-title">' + y + ' 年 ' + (m + 1) + ' 月</div>' +
+      '<div class="cal-nav"><button type="button" data-cal="-1" aria-label="上个月">‹</button>' +
+      '<button type="button" data-cal="1" aria-label="下个月">›</button></div></div>';
+    h += '<div class="cal-grid">';
+    ['日', '一', '二', '三', '四', '五', '六'].forEach(function (w) {
+      h += '<div class="cal-wd">' + w + '</div>';
+    });
+    var i;
+    for (i = 0; i < startWd; i++) h += '<div class="cal-cell is-empty"></div>';
+    for (i = 1; i <= daysInMonth; i++) {
+      var key = fmtDate(new Date(y, m, i));
+      var cls = 'cal-cell';
+      if (isActiveDay(key)) cls += ' is-on';
+      if (key === todayKey) cls += ' is-today';
+      if (key > todayKey) cls += ' is-future';
+      h += '<div class="' + cls + '">' + i + '</div>';
+    }
+    h += '</div></div>';
+    return h;
+  }
+
+  /* ---------------- 进度导出 / 导入 ---------------- */
+  function exportProgress() {
+    var payload = {
+      app: 'tianjin-english-words',
+      version: APP_VERSION,
+      exportedAt: new Date().toISOString(),
+      learned: learned,
+      wrong: wrongBook,
+      settings: settings,
+      stats: stats
+    };
+    try {
+      var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'tjw-progress-' + todayStr() + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      toast('已导出进度文件');
+    } catch (e) { toast('导出失败'); }
+  }
+
+  function importProgressFile(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var data;
+      try { data = JSON.parse(String(reader.result)); } catch (e) { toast('文件不是合法 JSON'); return; }
+      if (!data || typeof data !== 'object' || !Array.isArray(data.learned)) { toast('文件格式不正确'); return; }
+      if (!window.confirm('导入将覆盖当前学习进度，确定继续吗？')) return;
+      learned = data.learned.filter(function (id) { return byId[id]; });
+      wrongBook = Array.isArray(data.wrong) ? data.wrong.filter(function (id) { return byId[id]; }) : [];
+      if (data.settings && typeof data.settings === 'object') {
+        settings.hideCn = !!data.settings.hideCn;
+        settings.expandDetail = !!data.settings.expandDetail;
+      }
+      stats = (data.stats && typeof data.stats === 'object' && !Array.isArray(data.stats)) ? data.stats : {};
+      writeJSON(K.learned, learned);
+      writeJSON(K.wrong, wrongBook);
+      writeJSON(K.settings, settings);
+      writeJSON(K.stats, stats);
+      todayState = { date: todayStr(), ids: Logic.dailyPick(WORDS, learned, todayStr(), DAILY_COUNT) };
+      writeJSON(K.today, todayState);
+      todayIndex = 0;
+      quiz = null;
+      calMonth = null;
+      renderToday(); renderLibrary(); renderWrong(); renderMe();
+      toast('导入成功：已学 ' + learned.length + ' · 错词 ' + wrongBook.length);
+    };
+    reader.onerror = function () { toast('读取文件失败'); };
+    reader.readAsText(file);
+  }
+
   /* ---------------- 我的视图 ---------------- */
   function renderMe() {
     var total = WORDS.length;
@@ -448,14 +696,19 @@
       '<span class="muted">' + learnedCount + ' / ' + total + '</span></div>' +
       '<div class="bar"><div class="bar-fill" style="width:' + pct + '%"></div></div></div>';
 
+    html += statsHTML();
+
+    html += '<div class="panel glass"><div class="sect-title">复习日历</div>' + calendarHTML() + '</div>';
+
     html += '<div class="panel glass"><div class="progress-text"><span style="font-size:15px">错词本</span>' +
       '<span class="muted">' + wrongCount + ' 个</span></div>' +
-      (wrongCount
-        ? '<div class="chips" style="margin-top:10px">' + wrongBook.filter(function (id) { return byId[id]; }).map(function (id) {
-            return '<span class="chip" data-goword="' + esc(id) + '">' + esc(byId[id].word) + '</span>';
-          }).join('') + '</div>'
-        : '<div class="muted" style="margin-top:8px">还没有错题，去「复习」做几道题吧。</div>') +
-      '</div>';
+      '<button class="btn btn-ghost btn-wide" id="goWrong" type="button" style="margin-top:10px">打开错词本</button></div>';
+
+    html += '<div class="panel glass"><div class="sect-title">进度备份</div>' +
+      '<div class="muted" style="margin-bottom:10px">学习进度只存本机浏览器。导出为文件后可换设备导入恢复。</div>' +
+      '<div class="io-row"><button class="btn btn-primary" id="exportBtn" type="button">导出进度</button>' +
+      '<button class="btn btn-ghost" id="importBtn" type="button">导入进度</button></div>' +
+      '<input type="file" id="importFile" accept="application/json,.json" hidden></div>';
 
     html += '<button class="btn danger btn-wide" id="resetBtn" type="button">重置学习进度</button>';
 
@@ -463,30 +716,49 @@
 
     $('meHost').innerHTML = html;
 
+    $('goWrong').addEventListener('click', function () { switchTab('wrong'); });
+
+    $('exportBtn').addEventListener('click', exportProgress);
+    $('importBtn').addEventListener('click', function () { $('importFile').click(); });
+    $('importFile').addEventListener('change', function (ev) {
+      var f = ev.target.files && ev.target.files[0];
+      if (f) importProgressFile(f);
+      ev.target.value = '';
+    });
+
+    $('meHost').querySelectorAll('[data-cal]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var delta = parseInt(b.getAttribute('data-cal'), 10);
+        var m = calMonth.m + delta, y = calMonth.y;
+        if (m < 0) { m = 11; y -= 1; } else if (m > 11) { m = 0; y += 1; }
+        calMonth = { y: y, m: m };
+        renderMe();
+      });
+    });
+
     $('resetBtn').addEventListener('click', function () {
       if (window.confirm('确定要清空全部学习进度与错词本吗？此操作不可撤销。')) {
-        if (window.confirm('再次确认：重置后「已学」「错词本」「今日进度」都会清空。继续？')) {
-          learned = []; wrongBook = [];
-          writeJSON(K.learned, learned); writeJSON(K.wrong, wrongBook);
+        if (window.confirm('再次确认：重置后「已学」「错词本」「今日进度」「统计」都会清空。继续？')) {
+          learned = []; wrongBook = []; stats = {};
+          writeJSON(K.learned, learned);
+          writeJSON(K.wrong, wrongBook);
+          writeJSON(K.stats, stats);
           localStorage.removeItem(K.today);
           todayState = { date: todayStr(), ids: Logic.dailyPick(WORDS, learned, todayStr(), DAILY_COUNT) };
           writeJSON(K.today, todayState);
           todayIndex = 0;
           quiz = null;
-          renderToday(); renderLibrary(); renderMe();
+          calMonth = null;
+          renderToday(); renderLibrary(); renderWrong(); renderMe();
           toast('已重置学习进度');
         }
       }
-    });
-
-    $('meHost').querySelectorAll('[data-goword]').forEach(function (c) {
-      c.addEventListener('click', function () { openSheet(parseInt(c.getAttribute('data-goword'), 10)); });
     });
   }
 
   /* ---------------- 路由 ---------------- */
   var currentTab = 'today';
-  var VIEW_TITLE = { today: '今日学习', review: '复习测验', library: '浏览词库', me: '我的进度' };
+  var VIEW_TITLE = { today: '今日学习', review: '复习测验', library: '浏览词库', wrong: '错词本', me: '我的进度' };
 
   function switchTab(tab) {
     if (tab === currentTab) {
@@ -503,6 +775,7 @@
     if (tab === 'today') renderToday();
     else if (tab === 'review') renderReview();
     else if (tab === 'library') renderLibrary();
+    else if (tab === 'wrong') renderWrong();
     else if (tab === 'me') renderMe();
     document.querySelector('.main').scrollTop = 0;
   }

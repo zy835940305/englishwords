@@ -1,6 +1,6 @@
 /* sw.js — Service Worker：网络优先 + 离线兜底（相对路径，兼容 GitHub Pages 子路径）
    注意：必须保持「网络优先」。若改回 cache-first，任何一次部署都无法到达用户设备。 */
-var CACHE = 'tjw-cache-v2';
+var CACHE = 'tjw-cache-v3';
 var ASSETS = [
   './',
   './index.html',
