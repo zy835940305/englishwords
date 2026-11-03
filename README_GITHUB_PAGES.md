@@ -1,5 +1,7 @@
 # 天津初中英语单词 · GitHub Pages 发布说明
 
+当前仓库：`https://github.com/zy835940305/englishwords`
+
 一个纯静态的 iPad / 手机 Web App（PWA），**零外部依赖**，完全离线可用。
 所有资源都使用**相对路径**，因此可以直接部署在 GitHub Pages 的项目子路径下
 （例如 `https://<用户名>.github.io/<仓库名>/`）。
