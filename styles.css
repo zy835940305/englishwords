@@ -366,6 +366,45 @@ body::after {
 /* ---------- 导出 / 导入 ---------- */
 .io-row { display: flex; gap: 10px; }
 
+/* ---------- 复习：范围 / 题型切换 ---------- */
+.quiz-bar { margin: 2px 2px 12px; }
+.seg { display: flex; gap: 6px; }
+.seg + .seg { margin-top: 8px; }
+.seg-btn {
+  flex: 1; min-width: 0; padding: 8px 4px; font-size: 12.5px; font-weight: 600; color: var(--ink-soft);
+  background: var(--glass); border: 1px solid var(--line); border-radius: 999px;
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  cursor: pointer; white-space: nowrap; transition: all 0.2s ease;
+}
+.seg-btn:active { transform: scale(0.97); }
+.seg-btn.is-on { color: #fff; background: var(--grad); border-color: transparent; box-shadow: 0 8px 22px rgba(79, 140, 255, 0.35); }
+
+/* ---------- 复习：听 / 写 / 说 作答区 ---------- */
+.play-big {
+  margin: 14px auto 4px; width: 96px; height: 96px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--glass-strong); color: var(--c2);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: transform 0.15s ease, background 0.2s ease, color 0.2s ease;
+}
+.play-big:active { transform: scale(0.94); background: var(--grad); color: #fff; border-color: transparent; }
+.q-cn { font-size: 27px; font-weight: 800; margin: 10px 4px 4px; line-height: 1.25; }
+.opt .opt-en { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 16px; }
+.q-write { margin-top: 2px; }
+.q-input {
+  width: 100%; padding: 15px 16px; font-size: 19px; color: var(--ink); text-align: center;
+  background: var(--glass); border: 1px solid var(--line); border-radius: var(--radius-sm); outline: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.04em;
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.q-input::placeholder { color: var(--muted); font-size: 14px; letter-spacing: 0; }
+.q-input:focus { border-color: rgba(109, 92, 255, 0.6); box-shadow: 0 0 0 3px rgba(109, 92, 255, 0.18); }
+.q-input.is-right { border-color: var(--ok); background: rgba(52, 211, 153, 0.14); }
+.q-input.is-wrong { border-color: var(--bad); background: rgba(251, 113, 133, 0.14); animation: shake 0.4s ease; }
+.speak-btns { display: flex; gap: 10px; margin-top: 2px; }
+.speak-note { text-align: center; font-size: 12px; color: var(--muted); margin-top: 12px; }
+.self-row { display: flex; gap: 10px; margin-top: 12px; }
+.q-answer-line { text-align: center; font-size: 15px; color: var(--ink-soft); margin-top: 4px; }
+
 @media (min-width: 700px) {
   .w-word { font-size: 34px; }
   .app { max-width: 760px; margin: 0 auto; }

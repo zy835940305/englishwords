@@ -6,7 +6,7 @@
   'use strict';
 
   var WORDS = (typeof window !== 'undefined' && window.WORDS) || [];
-  var APP_VERSION = '1.1.0';
+  var APP_VERSION = '1.2.0';
   var DAILY_COUNT = 25;
   var K = {
     learned: 'tjw_learned',
@@ -322,122 +322,366 @@
     updateTodayProgress();
   }
 
-  /* ---------------- 复习视图 ---------------- */
+  /* ---------------- 复习视图（范围 + 听说读写四题型） ---------------- */
   var quiz = null;
+  var QUIZ_TYPES = ['read', 'listen', 'write', 'speak'];
+  var SCOPE_LABEL = { today: '今天的', learned: '全部已学', wrong: '错词本' };
+  var TYPE_LABEL = { mix: '综合', read: '读', listen: '听', write: '写', speak: '说' };
+  var MIC_LABEL = '开始朗读';
 
-  function buildQuiz(idList) {
-    var pool;
-    if (idList && idList.length) {
-      pool = idList.map(function (id) { return byId[id]; }).filter(Boolean);
-    } else {
-      pool = learned.map(function (id) { return byId[id]; }).filter(Boolean);
-      if (pool.length < 10) pool = WORDS.slice(0);
+  var PLAY_SVG = '<svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true">' +
+    '<path d="M4 9h3.2L12 5.2v13.6L7.2 15H4z" fill="currentColor"/>' +
+    '<path d="M15.5 8.6a4.2 4.2 0 0 1 0 6.8M18.4 6a7.6 7.6 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' +
+    '</svg>';
+
+  function normWord(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z]/g, ''); }
+
+  function matchSpoken(transcript, target) {
+    var t = String(transcript == null ? '' : transcript).toLowerCase();
+    var parts = t.replace(/[^a-z\s']/g, ' ').split(/\s+/);
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i].replace(/[^a-z]/g, '') === target) return true;
     }
-    var seed = Logic.hashSeed(todayStr() + '#quiz#' + (idList ? 'w' : 'n') + '#' + pool.length);
-    var picked = Logic.seededShuffle(pool, seed).slice(0, Math.min(10, pool.length));
-    var questions = picked.map(function (w) {
-      var e = Logic.enhance(w, WORDS);
-      var tag = e.pos.length ? e.pos[0].tag : '';
-      var first = Logic.cleanBase(w.word).charAt(0);
-      var distract = WORDS.filter(function (x) {
-        if (x.id === w.id) return false;
-        var xe = { pos: Logic.parsePOS(x.meaning) };
-        var xtag = xe.pos.length ? xe.pos[0].tag : '';
-        var xfirst = Logic.cleanBase(x.word).charAt(0);
-        return (tag && xtag === tag) || (first && xfirst === first);
-      });
-      if (distract.length < 3) distract = WORDS.filter(function (x) { return x.id !== w.id; });
-      var ds = Logic.seededShuffle(distract, Logic.hashSeed(String(w.id))).slice(0, 3);
-      var options = ds.map(function (x) { return { id: x.id, text: Logic.splitMeanings(x.meaning)[0] || x.meaning }; });
-      options.push({ id: w.id, text: e.coreMeaning });
-      options = Logic.seededShuffle(options, Logic.hashSeed('opt' + w.id));
-      return { entry: w, e: e, options: options, chosen: null };
+    return normWord(t) === target;
+  }
+
+  // 干扰项：优先取同词性/同首字母的词，不足则全库随机
+  function distractorWords(w, n) {
+    var pos = Logic.parsePOS(w.meaning);
+    var tag = pos.length ? pos[0].tag : '';
+    var first = Logic.cleanBase(w.word).charAt(0);
+    var pool = WORDS.filter(function (x) {
+      if (x.id === w.id) return false;
+      var xtag = Logic.parsePOS(x.meaning);
+      return (tag && xtag.length && xtag[0].tag === tag) || (first && Logic.cleanBase(x.word).charAt(0) === first);
     });
-    return { questions: questions, index: 0, right: 0 };
+    if (pool.length < n) pool = WORDS.filter(function (x) { return x.id !== w.id; });
+    return Logic.seededShuffle(pool, Logic.hashSeed(String(w.id))).slice(0, n);
+  }
+
+  function quizPool(scope) {
+    var ids;
+    if (scope === 'today') {
+      ids = statOf(todayStr()).learned.slice();       // 今天标记已学的
+      if (!ids.length) ids = todayState.ids.slice();  // 今天还没标记 → 拿今天这 25 个词
+    } else if (scope === 'wrong') {
+      ids = wrongBook.slice();
+    } else {
+      ids = learned.slice();
+      if (ids.length < 10) return WORDS.slice(0);     // 已学不足 10 个 → 全库兜底
+    }
+    return ids.map(function (id) { return byId[id]; }).filter(Boolean);
+  }
+
+  function buildQuiz(opts) {
+    if (Array.isArray(opts)) opts = { ids: opts };  // 兼容旧调用 buildQuiz(idList)
+    opts = opts || {};
+    var scope = opts.scope || 'learned';
+    var type = opts.type || 'mix';
+    var pool = (opts.ids && opts.ids.length)
+      ? opts.ids.map(function (id) { return byId[id]; }).filter(Boolean)
+      : quizPool(scope);
+    var seed = Logic.hashSeed(todayStr() + '#quiz#' + scope + '#' + type + '#' + pool.length);
+    var picked = Logic.seededShuffle(pool, seed).slice(0, Math.min(10, pool.length));
+
+    var questions = picked.map(function (w, qi) {
+      var e = Logic.enhance(w, WORDS);
+      var t = (type === 'mix') ? QUIZ_TYPES[(seed + qi) % QUIZ_TYPES.length] : type;
+      var q = { entry: w, e: e, type: t, options: null, answered: false, ok: false, given: null };
+      if (t === 'read') {
+        q.options = distractorWords(w, 3).map(function (x) {
+          return { id: x.id, text: Logic.splitMeanings(x.meaning)[0] || x.meaning };
+        });
+        q.options.push({ id: w.id, text: e.coreMeaning });
+        q.options = Logic.seededShuffle(q.options, Logic.hashSeed('opt' + w.id));
+      } else if (t === 'listen') {
+        q.options = distractorWords(w, 3).map(function (x) { return { id: x.id, text: x.word }; });
+        q.options.push({ id: w.id, text: w.word });
+        q.options = Logic.seededShuffle(q.options, Logic.hashSeed('opt' + w.id));
+      }
+      return q;
+    });
+    return { scope: scope, type: type, questions: questions, index: 0, right: 0 };
+  }
+
+  function renderQuizSegs() {
+    var scope = quiz ? quiz.scope : 'today';
+    var type = quiz ? quiz.type : 'mix';
+    document.querySelectorAll('#scopeSeg .seg-btn').forEach(function (b) {
+      b.classList.toggle('is-on', b.getAttribute('data-scope') === scope);
+    });
+    document.querySelectorAll('#typeSeg .seg-btn').forEach(function (b) {
+      b.classList.toggle('is-on', b.getAttribute('data-qtype') === type);
+    });
+  }
+
+  function quizEmptyMsg() {
+    if (quiz && quiz.scope === 'wrong') return '错词本是空的。先去其它范围做几道题吧。';
+    if (quiz && quiz.scope === 'today') return '今天还没有单词可练。';
+    return '暂无可复习的单词。';
+  }
+
+  function qStemHTML(q) {
+    var e = q.e;
+    var label = {
+      read: '选择正确的中文释义',
+      listen: '点击播放，选出你听到的单词',
+      write: '根据中文释义拼写出英文单词',
+      speak: '朗读下面的单词'
+    }[q.type];
+    var h = '<div class="quiz-q glass"><div class="q-label">' + esc(label) + '</div>';
+    if (q.type === 'listen') {
+      h += '<button class="play-big" data-play="1" type="button" aria-label="播放读音">' + PLAY_SVG + '</button>' +
+        '<div class="q-phon">没听清可重复点击</div>';
+    } else if (q.type === 'write') {
+      h += '<div class="q-cn">' + esc(e.coreMeaning) + '</div>' +
+        (e.posText ? '<div class="q-phon">' + esc(e.posText) + '</div>' : '');
+    } else {
+      h += '<div class="q-word">' + esc(e.word) + speakBtn(e.word) + '</div>' +
+        '<div class="q-phon">' + esc(e.phonetic) + '</div>';
+    }
+    h += '</div>';
+    return h;
+  }
+
+  function qOptionsHTML(q) {
+    return q.options.map(function (op, i) {
+      var cls = 'opt';
+      if (q.answered) {
+        if (op.id === q.e.id) cls += ' is-right';
+        else if (op.id === q.given) cls += ' is-wrong';
+      }
+      return '<button class="' + cls + '" data-opt="' + esc(op.id) + '" type="button"' + (q.answered ? ' disabled' : '') + '>' +
+        '<span class="idx">' + 'ABCD'.charAt(i) + '</span>' +
+        '<span' + (q.type === 'listen' ? ' class="opt-en"' : '') + '>' + esc(op.text) + '</span></button>';
+    }).join('');
+  }
+
+  function qAnswerArea(q) {
+    if (q.type === 'read' || q.type === 'listen') return qOptionsHTML(q);
+
+    if (q.type === 'write') {
+      var cls = 'q-input' + (q.answered ? (q.ok ? ' is-right' : ' is-wrong') : '');
+      return '<div class="q-write">' +
+        '<input class="' + cls + '" id="qInput" type="text" value="' + esc(q.answered ? (q.given || '') : '') + '"' +
+        ' autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"' +
+        ' placeholder="在这里拼写英文单词"' + (q.answered ? ' disabled' : '') + '>' +
+        (q.answered ? '' : '<button class="btn btn-primary btn-wide" id="qCheck" type="button" style="margin-top:10px">检查</button>') +
+        '</div>';
+    }
+
+    // speak
+    if (q.answered) {
+      return '<div class="q-answer-line">' + (q.ok ? '✓ 记作读对' : '✕ 记作没读对') + '</div>';
+    }
+    var h = '<div class="speak-btns">' +
+      '<button class="btn btn-ghost" id="qDemo" type="button">听示范读音</button>';
+    if (speechSupported()) h += '<button class="btn btn-ghost" id="qMic" type="button">' + MIC_LABEL + '</button>';
+    h += '</div>';
+    if (!speechSupported()) {
+      h += '<div class="speak-note">此设备不支持语音识别，请自己判断是否读对。</div>';
+    }
+    h += '<div class="self-row">' +
+      '<button class="btn btn-ghost" data-self="1" type="button">读对了</button>' +
+      '<button class="btn btn-ghost" data-self="0" type="button">没读对</button></div>';
+    return h;
+  }
+
+  function qExplainHTML(q) {
+    var e = q.e;
+    var head;
+    if (q.type === 'write') {
+      head = q.ok ? '<div class="ok-line">✓ 拼写正确</div>'
+        : '<div class="bad-line">✕ 拼写有误，正确拼写：' + esc(e.word) + '</div>';
+    } else if (q.type === 'speak') {
+      head = q.ok ? '<div class="ok-line">✓ 读对了</div>'
+        : '<div class="bad-line">✕ 没读对，正确单词：' + esc(e.word) + '</div>';
+    } else if (q.type === 'listen') {
+      head = q.ok ? '<div class="ok-line">✓ 听音正确</div>'
+        : '<div class="bad-line">✕ 听错了，正确单词：' + esc(e.word) + '</div>';
+    } else {
+      head = q.ok ? '<div class="ok-line">✓ 回答正确</div>'
+        : '<div class="bad-line">✕ 回答错误，正确释义：' + esc(e.coreMeaning) + '</div>';
+    }
+
+    var h = '<div class="explain glass">' + head;
+    // 听/说题型题干里没给中文释义，这里补上
+    if (q.type === 'listen' || q.type === 'speak') {
+      h += '<div class="sect"><div class="sect-title">释义</div><div class="meaning-full">' +
+        esc(e.posText ? (e.posText + '｜' + e.fullMeanings.join('；')) : e.fullMeanings.join('；')) + '</div></div>';
+    }
+    h += '<div class="sect"><div class="sect-title">高频搭配</div>' +
+      (e.collocations.type === 'collocation'
+        ? chips(e.collocations.items, 'en')
+        : chips(Logic.sentencePatterns(e.word, e.pos))) + '</div>';
+    h += '<div class="sect"><div class="sect-title">练习句</div>' + listHTML(e.practiceSentences) + '</div>';
+    if (q.type === 'speak' || q.type === 'listen') {
+      h += '<div class="sect"><div class="sect-title">发音提醒</div>' + listHTML(e.pronunciationTips) + '</div>';
+    }
+    h += '<div class="teacher-box"><strong style="color:var(--c2)">老师点拨：</strong>' + esc(e.teacherTip) + '</div>';
+    h += '<div class="sect" style="margin-top:14px"><button class="btn btn-primary btn-wide" id="quizNext" type="button">' +
+      (quiz.index + 1 >= quiz.questions.length ? '查看结果' : '下一题') + '</button></div>';
+    h += '</div>';
+    return h;
   }
 
   function renderReview() {
     var host = $('reviewHost');
-    if (!quiz) quiz = buildQuiz();
+    if (!quiz) quiz = buildQuiz({ scope: 'today', type: 'mix' });
+    renderQuizSegs();
 
     if (!quiz.questions.length) {
-      host.innerHTML = '<div class="glass panel quiz-empty">暂无可复习的单词。</div>';
+      host.innerHTML = '<div class="glass panel quiz-empty">' + esc(quizEmptyMsg()) + '</div>';
       return;
     }
     if (quiz.index >= quiz.questions.length) {
       host.innerHTML = '<div class="glass panel" style="text-align:center">' +
         '<div class="s-num" style="font-size:40px">' + quiz.right + ' / ' + quiz.questions.length + '</div>' +
-        '<div class="muted" style="margin:10px 0 18px">本轮复习完成</div>' +
+        '<div class="muted" style="margin:10px 0 18px">本轮「' + esc(SCOPE_LABEL[quiz.scope] || '') + ' · ' + esc(TYPE_LABEL[quiz.type] || '') + '」完成</div>' +
         '<button class="btn btn-primary btn-wide" id="quizRestart" type="button">再来一轮</button></div>';
-      $('quizRestart').addEventListener('click', function () { quiz = buildQuiz(); renderReview(); });
+      $('quizRestart').addEventListener('click', function () {
+        quiz = buildQuiz({ scope: quiz.scope, type: quiz.type });
+        renderReview();
+      });
       return;
     }
 
     var q = quiz.questions[quiz.index];
-    var e = q.e;
-    var answered = q.chosen !== null;
-
     var html = '<div class="score-line"><span>第 ' + (quiz.index + 1) + ' / ' + quiz.questions.length + ' 题</span>' +
       '<span>答对 ' + quiz.right + '</span></div>';
-    html += '<div class="quiz-q glass"><div class="q-label">选择正确的中文释义</div>' +
-      '<div class="q-word">' + esc(e.word) + speakBtn(e.word) + '</div>' +
-      '<div class="q-phon">' + esc(e.phonetic) + '</div></div>';
-
-    html += q.options.map(function (op, i) {
-      var cls = 'opt';
-      if (answered) {
-        if (op.id === e.id) cls += ' is-right';
-        else if (op.id === q.chosen) cls += ' is-wrong';
-      }
-      return '<button class="' + cls + '" data-opt="' + esc(op.id) + '" type="button"' + (answered ? ' disabled' : '') + '>' +
-        '<span class="idx">' + 'ABCD'.charAt(i) + '</span><span>' + esc(op.text) + '</span></button>';
-    }).join('');
-
-    if (answered) {
-      var ok = q.chosen === e.id;
-      html += '<div class="explain glass">' +
-        (ok ? '<div class="ok-line">✓ 回答正确</div>' : '<div class="bad-line">✕ 回答错误，正确释义：' + esc(e.coreMeaning) + '</div>') +
-        '<div class="sect"><div class="sect-title">高频搭配</div>' +
-          (e.collocations.type === 'collocation'
-            ? chips(e.collocations.items, 'en')
-            : chips(Logic.sentencePatterns(e.word, e.pos))) +
-        '</div>' +
-        '<div class="sect"><div class="sect-title">练习句</div>' + listHTML(e.practiceSentences) + '</div>' +
-        '<div class="teacher-box"><strong style="color:var(--c2)">老师点拨：</strong>' + esc(e.teacherTip) + '</div>' +
-        '<div class="sect" style="margin-top:14px"><button class="btn btn-primary btn-wide" id="quizNext" type="button">' +
-          (quiz.index + 1 >= quiz.questions.length ? '查看结果' : '下一题') + '</button></div>' +
-        '</div>';
-    } else {
-      html += '<div class="muted" style="text-align:center;margin-top:16px">答完后会显示讲解与老师点拨</div>';
-    }
-
+    html += qStemHTML(q);
+    html += qAnswerArea(q);
+    if (q.answered) html += qExplainHTML(q);
+    else html += '<div class="muted" style="text-align:center;margin-top:16px">答完后会显示讲解与老师点拨</div>';
     host.innerHTML = html;
 
+    bindQuiz(host, q);
+    if (q.type === 'listen' && !q.answered) speak(q.e.word);
+  }
+
+  function bindQuiz(host, q) {
     host.querySelectorAll('[data-opt]').forEach(function (b) {
-      b.addEventListener('click', function () { answerQuiz(parseInt(b.getAttribute('data-opt'), 10)); });
+      b.addEventListener('click', function () { answerChoice(parseInt(b.getAttribute('data-opt'), 10)); });
     });
     var sp = host.querySelector('[data-speak]');
-    if (sp) sp.addEventListener('click', function () { speak(sp.getAttribute('data-speak')); });
+    if (sp) sp.addEventListener('click', function (ev) { ev.stopPropagation(); speak(sp.getAttribute('data-speak')); });
+    var pb = host.querySelector('[data-play]');
+    if (pb) pb.addEventListener('click', function () { speak(q.e.word); });
+    var demo = $('qDemo');
+    if (demo) demo.addEventListener('click', function () { speak(q.e.word); });
+    var input = $('qInput');
+    if (input && !q.answered) {
+      input.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') { ev.preventDefault(); submitWrite(); }
+      });
+    }
+    var check = $('qCheck');
+    if (check) check.addEventListener('click', submitWrite);
+    var mic = $('qMic');
+    if (mic) mic.addEventListener('click', startSpeech);
+    host.querySelectorAll('[data-self]').forEach(function (b) {
+      b.addEventListener('click', function () { finishQuestion(b.getAttribute('data-self') === '1', 'self'); });
+    });
     var next = $('quizNext');
     if (next) next.addEventListener('click', function () { quiz.index++; renderReview(); });
   }
 
-  function answerQuiz(optId) {
+  function answerChoice(optId) {
     var q = quiz.questions[quiz.index];
-    if (q.chosen !== null) return;
-    q.chosen = optId;
-    var correctId = q.e.id;
+    if (q.answered) return;
+    finishQuestion(optId === q.e.id, optId);
+  }
+
+  function submitWrite() {
+    var q = quiz.questions[quiz.index];
+    if (!q || q.answered || q.type !== 'write') return;
+    var input = $('qInput');
+    var val = input ? input.value : '';
+    if (!String(val).trim()) { toast('先拼写一下再检查'); return; }
+    finishQuestion(normWord(val) === normWord(Logic.cleanBase(q.e.word)), String(val).trim());
+  }
+
+  // 统一判分：对错入统计、错词本增删，然后重绘
+  function finishQuestion(ok, given) {
+    var q = quiz.questions[quiz.index];
+    if (q.answered) return;
+    q.answered = true;
+    q.ok = !!ok;
+    q.given = given;
+    var cid = q.e.id;
     var s = statOf(todayStr());
     s.total++;
-    if (optId === correctId) {
+    if (ok) {
       quiz.right++;
       s.right++;
-      var wi = wrongBook.indexOf(correctId);
+      var wi = wrongBook.indexOf(cid);
       if (wi >= 0) { wrongBook.splice(wi, 1); saveWrong(); }
     } else {
-      if (wrongBook.indexOf(correctId) < 0) { wrongBook.push(correctId); saveWrong(); }
+      if (wrongBook.indexOf(cid) < 0) { wrongBook.push(cid); saveWrong(); }
     }
     saveStats();
+    renderReview();
+  }
+
+  /* ---------------- 语音识别（说的题型；不可用则退化为自评） ---------------- */
+  var SRClass = (typeof window !== 'undefined' &&
+    (window.SpeechRecognition || window.webkitSpeechRecognition)) || null;
+  var recog = null;
+
+  function speechSupported() { return !!SRClass; }
+
+  function resetMicBtn() {
+    var b = $('qMic');
+    if (b) { b.classList.remove('is-rec'); b.textContent = MIC_LABEL; }
+  }
+
+  function startSpeech() {
+    var q = quiz && quiz.questions[quiz.index];
+    if (!q || q.answered) return;
+    if (!SRClass) { toast('当前浏览器不支持语音识别'); return; }
+    if (recog) { try { recog.abort(); } catch (e) { /* ignore */ } }
+    var r;
+    try { r = new SRClass(); } catch (e) { toast('语音识别不可用'); return; }
+    recog = r;
+    r.lang = 'en-US';
+    r.continuous = false;
+    r.interimResults = false;
+    r.maxAlternatives = 5;
+
+    var btn = $('qMic');
+    if (btn) { btn.classList.add('is-rec'); btn.textContent = '正在听…'; }
+
+    r.onresult = function (ev) {
+      var alts = [];
+      try {
+        var res = ev.results[0];
+        for (var i = 0; i < res.length; i++) alts.push(res[i].transcript);
+      } catch (e) { /* ignore */ }
+      var target = normWord(Logic.cleanBase(q.e.word));
+      var ok = alts.some(function (t) { return matchSpoken(t, target); });
+      toast(ok ? '识别成功 ✓' : ('识别为：' + (alts[0] || '（空）')));
+      finishQuestion(ok, alts.join(' / '));
+    };
+    r.onerror = function (ev) {
+      var m = (ev && ev.error) || 'unknown';
+      if (m === 'not-allowed' || m === 'service-not-allowed') toast('麦克风未授权，请用下方自评');
+      else if (m === 'no-speech') toast('没听到声音，再试一次');
+      else toast('语音识别失败（' + m + '），请用下方自评');
+      resetMicBtn();
+    };
+    r.onend = function () { resetMicBtn(); };
+    try { r.start(); } catch (e) { toast('无法启动语音识别'); resetMicBtn(); }
+  }
+
+  function setQuizScope(scope) {
+    if (quiz && quiz.scope === scope) return;
+    quiz = buildQuiz({ scope: scope, type: quiz ? quiz.type : 'mix' });
+    renderReview();
+  }
+
+  function setQuizType(type) {
+    if (quiz && quiz.type === type) return;
+    quiz = buildQuiz({ scope: quiz ? quiz.scope : 'today', type: type });
     renderReview();
   }
 
@@ -531,7 +775,7 @@
     host.innerHTML = html;
 
     $('wrongRedo').addEventListener('click', function () {
-      quiz = buildQuiz(ids);
+      quiz = buildQuiz({ scope: 'wrong' });
       switchTab('review');
     });
     host.querySelectorAll('[data-wid]').forEach(function (row) {
@@ -790,6 +1034,17 @@
     $('todayPrev').addEventListener('click', function () { gotoToday(-1); });
     $('todayNext').addEventListener('click', function () { gotoToday(1); });
     $('todayMark').addEventListener('click', toggleMark);
+    $('todayPractice').addEventListener('click', function () {
+      quiz = buildQuiz({ scope: 'today', type: 'mix' });
+      switchTab('review');
+    });
+
+    $('quizBar').addEventListener('click', function (ev) {
+      var s = ev.target.closest('[data-scope]');
+      if (s) { setQuizScope(s.getAttribute('data-scope')); return; }
+      var t = ev.target.closest('[data-qtype]');
+      if (t) setQuizType(t.getAttribute('data-qtype'));
+    });
 
     $('toggleCn').addEventListener('click', function () {
       settings.hideCn = !settings.hideCn;

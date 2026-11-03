@@ -41,10 +41,25 @@
         <button class="btn btn-primary" id="todayMark" type="button">标记已学</button>
         <button class="btn btn-ghost" id="todayNext" type="button">下一个</button>
       </div>
+      <button class="btn btn-ghost btn-wide" id="todayPractice" type="button" style="margin-top:10px">练习今天的词</button>
     </section>
 
     <!-- 复习 -->
     <section class="view" id="view-review" data-view="review">
+      <div class="quiz-bar" id="quizBar">
+        <div class="seg" id="scopeSeg">
+          <button class="seg-btn is-on" data-scope="today" type="button">今天的</button>
+          <button class="seg-btn" data-scope="learned" type="button">全部已学</button>
+          <button class="seg-btn" data-scope="wrong" type="button">错词本</button>
+        </div>
+        <div class="seg" id="typeSeg">
+          <button class="seg-btn is-on" data-qtype="mix" type="button">综合</button>
+          <button class="seg-btn" data-qtype="read" type="button">读</button>
+          <button class="seg-btn" data-qtype="listen" type="button">听</button>
+          <button class="seg-btn" data-qtype="write" type="button">写</button>
+          <button class="seg-btn" data-qtype="speak" type="button">说</button>
+        </div>
+      </div>
       <div id="reviewHost"></div>
     </section>
 
