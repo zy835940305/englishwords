@@ -6,6 +6,7 @@
   'use strict';
 
   var WORDS = (typeof window !== 'undefined' && window.WORDS) || [];
+  var APP_VERSION = '1.0.0';
   var DAILY_COUNT = 25;
   var K = {
     learned: 'tjw_learned',
@@ -457,6 +458,9 @@
       '</div>';
 
     html += '<button class="btn danger btn-wide" id="resetBtn" type="button">重置学习进度</button>';
+
+    html += '<div class="ver-line muted">版本 v' + APP_VERSION + ' · 词库 ' + total + ' 条 · 学习进度存于本机</div>';
+
     $('meHost').innerHTML = html;
 
     $('resetBtn').addEventListener('click', function () {

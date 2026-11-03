@@ -303,6 +303,8 @@ body::after {
 }
 .toast.is-on { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+.ver-line { text-align: center; font-size: 12px; margin-top: 16px; line-height: 1.7; }
+
 @media (min-width: 700px) {
   .w-word { font-size: 34px; }
   .app { max-width: 760px; margin: 0 auto; }
