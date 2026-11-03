@@ -1,5 +1,6 @@
-/* sw.js — Service Worker：离线缓存（相对路径，兼容 GitHub Pages 子路径） */
-var CACHE = 'tjw-cache-v1';
+/* sw.js — Service Worker：网络优先 + 离线兜底（相对路径，兼容 GitHub Pages 子路径）
+   注意：必须保持「网络优先」。若改回 cache-first，任何一次部署都无法到达用户设备。 */
+var CACHE = 'tjw-cache-v2';
 var ASSETS = [
   './',
   './index.html',
@@ -42,16 +43,15 @@ self.addEventListener('fetch', function (e) {
   if (url.origin !== self.location.origin) return;
 
   e.respondWith(
-    caches.match(req, { ignoreSearch: true }).then(function (hit) {
-      if (hit) return hit;
-      return fetch(req).then(function (res) {
-        if (res && res.status === 200 && res.type === 'basic') {
-          var copy = res.clone();
-          caches.open(CACHE).then(function (c) { c.put(req, copy); }).catch(function () {});
-        }
-        return res;
-      }).catch(function () {
-        return caches.match('./index.html');
+    fetch(req).then(function (res) {
+      if (res && res.status === 200 && res.type === 'basic') {
+        var copy = res.clone();
+        caches.open(CACHE).then(function (c) { c.put(req, copy); }).catch(function () {});
+      }
+      return res;
+    }).catch(function () {
+      return caches.match(req, { ignoreSearch: true }).then(function (hit) {
+        return hit || caches.match('./index.html');
       });
     })
   );
