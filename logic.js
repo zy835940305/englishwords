@@ -75,7 +75,7 @@ var Logic = (function () {
 
   function cleanSegment(x) {
     return String(x)
-      .replace(/^[\s&、，,；;:：()（）\[\]=＝\u3000]+/, '')
+      .replace(/^[^A-Za-z0-9\u4e00-\u9fa5（(]+/, '')
       .replace(/[\s&、，,；;:：]+$/, '')
       .trim();
   }

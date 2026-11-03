@@ -410,15 +410,23 @@
     var w = byId[id];
     if (!w) return;
     var e = Logic.enhance(w, WORDS);
-    $('sheetHost').innerHTML = cardHTML(e, { forceOpen: true });
     var sheet = $('wordSheet');
+    var panel = sheet.querySelector('.sheet-panel');
+    $('sheetHost').innerHTML = cardHTML(e, { forceOpen: true });
     sheet.hidden = false;
+    if (panel) panel.scrollTop = 0;
     var card = $('sheetHost').querySelector('[data-card]');
     bindCardInteractions(card);
     var toggle = card.querySelector('.detail-toggle');
     if (toggle) toggle.style.display = 'none';
   }
-  function closeSheet() { $('wordSheet').hidden = true; $('sheetHost').innerHTML = ''; }
+  function closeSheet() {
+    var sheet = $('wordSheet');
+    var panel = sheet.querySelector('.sheet-panel');
+    sheet.hidden = true;
+    $('sheetHost').innerHTML = '';
+    if (panel) panel.scrollTop = 0;
+  }
 
   /* ---------------- 我的视图 ---------------- */
   function renderMe() {
